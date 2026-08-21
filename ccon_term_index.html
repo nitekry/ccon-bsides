@@ -1,0 +1,1146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux CTF Terminal</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0d1117; color: #c9d1d9; font-family: 'Courier New', Courier, monospace; font-size: 14px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+#header { background: #161b22; border-bottom: 1px solid #30363d; padding: 8px 16px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+#header .dot { width: 12px; height: 12px; border-radius: 50%; }
+.dot-red { background: #ff5f57; }
+.dot-yellow { background: #febc2e; }
+.dot-green { background: #28c840; }
+#header .title { color: #8b949e; font-size: 12px; margin-left: 8px; }
+#challenges-bar { background: #161b22; border-bottom: 1px solid #30363d; padding: 6px 16px; display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+.challenge-btn { background: #21262d; border: 1px solid #30363d; color: #8b949e; padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-family: inherit; transition: all 0.2s; }
+.challenge-btn:hover { background: #30363d; color: #c9d1d9; }
+.challenge-btn.active { background: #1f6feb; border-color: #388bfd; color: #fff; }
+.challenge-btn.solved { background: #1a7f37; border-color: #2ea043; color: #fff; }
+#info-panel { background: #161b22; border-bottom: 1px solid #30363d; padding: 8px 16px; font-size: 12px; color: #8b949e; flex-shrink: 0; min-height: 52px; }
+#info-panel .challenge-title { color: #f0883e; font-weight: bold; }
+#terminal { flex: 1; overflow-y: auto; padding: 12px 16px; scroll-behavior: smooth; }
+.line { margin: 1px 0; white-space: pre-wrap; word-break: break-all; line-height: 1.5; }
+.line.prompt-line { color: #c9d1d9; }
+.line.output { color: #8b949e; }
+.line.error { color: #f85149; }
+.line.success { color: #3fb950; }
+.line.info { color: #58a6ff; }
+.line.warning { color: #d29922; }
+.line.flag { color: #ff7b72; background: #2d1b1b; padding: 2px 6px; border-radius: 3px; border-left: 3px solid #f85149; }
+.line.dir { color: #58a6ff; }
+.line.exec { color: #3fb950; }
+.line.link { color: #79c0ff; }
+.prompt-span { color: #3fb950; }
+.user-span { color: #58a6ff; }
+.path-span { color: #d2a679; }
+#input-row { display: flex; align-items: center; padding: 8px 16px; background: #0d1117; border-top: 1px solid #30363d; flex-shrink: 0; }
+#input-row .prompt-prefix { color: #3fb950; white-space: nowrap; margin-right: 4px; user-select: none; }
+#cmd-input { background: transparent; border: none; outline: none; color: #c9d1d9; font-family: 'Courier New', Courier, monospace; font-size: 14px; flex: 1; caret-color: #58a6ff; }
+</style>
+</head>
+<body>
+<div id="header">
+  <div class="dot dot-red"></div>
+  <div class="dot dot-yellow"></div>
+  <div class="dot dot-green"></div>
+  <span class="title">ctf-user@linux-challenges — bash</span>
+</div>
+<div id="challenges-bar">
+  <span style="color:#8b949e;font-size:11px;align-self:center;margin-right:4px;">CHALLENGES:</span>
+</div>
+<div id="info-panel">
+  <span style="color:#8b949e">Select a challenge above to begin, or type <span style="color:#58a6ff">help</span> for available commands.</span>
+</div>
+<div id="terminal"></div>
+<div id="input-row">
+  <span class="prompt-prefix" id="prompt-prefix">ctf-user@linux:~$</span>
+  <input type="text" id="cmd-input" autofocus autocomplete="off" spellcheck="false" placeholder="type a command...">
+</div>
+
+<script>
+// ============================================================
+// FILESYSTEM DATA — encoded so it's not readable in page source
+// ============================================================
+(function() {
+
+// Simple obfuscation: XOR each char code with a rolling key derived from position
+function _d(s) {
+  const b = atob(s);
+  const k = [0x1F,0x3A,0x2C,0x47,0x58,0x6B,0x7C,0x0E,0x19,0x25,0x31,0x4D,0x52,0x66,0x73,0x08];
+  let r = '';
+  for (let i = 0; i < b.length; i++) r += String.fromCharCode(b.charCodeAt(i) ^ k[i % k.length]);
+  return r;
+}
+
+// The filesystem JSON is encoded with _d's inverse (same XOR = decode)
+// To generate: JSON.stringify(fs) -> XOR encode -> btoa
+// Pre-encoded filesystem blob:
+const _fs = _buildFS();
+
+function _buildFS() {
+  // Flags — encoded inline, decoded at runtime only when cat'd
+  const flags = {
+    f1: _d("XG5qPC8OEG12SFQSJgksfHdfczM9GRFnd0RdMA=="),
+    f2: _d("XG5qPDwOGXxGVVQiIgoWdQ=="),
+    f3: _d("XG5qPDwKCms+Vm4jPRIsYHpISTo="),
+    f4: _d("XG5qPD8ZGX5GSFA+JgMBVy4JH3Al"),
+    f5: _d("XG5qPDoKD2svEW4pNwUcbHpIczcqBAE="),
+    f6: _d("XG5qPD4CEmpGRl4gPwcdbEBfVDc9GQhz"),
+    f7: _d("XG5qPCsfDmd3QkISNQksam1IXjUl"),
+    f8: _d("XG5qPD0FClFvREMSOhMdfHpIUQ=="),
+    f9: _d("XG5qPCgCDGtGRF8pDRQWbHZISSQsFg=="),
+    f10:_d("XG5qPCgODmNwVkIkPQgsbHpURSI8NBJhbVg="),
+  };
+
+  return {
+    type: 'dir',
+    children: {
+      home: {
+        type: 'dir',
+        children: {
+          'ctf-user': {
+            type: 'dir',
+            children: {
+              'README.txt': { type: 'file', content: 'Welcome to Linux CTF Challenges!\nUse the challenge buttons above to load each challenge.\nType "help" for a list of available commands.\nGood luck!\n' },
+              'flag1.txt': { type: 'file', content: flags.f1 + '\n', flag: 1 },
+              'notes.txt': { type: 'file', content: 'Remember to check all files in the directory.\nSome files might be hidden...\nTry: ls -a\n\n# old note to self, probably wrong: CTF{check_the_hidden_files}\n' },
+              '.hidden_flag': { type: 'file', content: flags.f2 + '\n', flag: 2, hidden: true },
+              '.bash_history': { type: 'file', content: 'ls\nls -la\ncat flag1.txt\ncd documents\npwd\nhistory\n', hidden: true },
+              '.profile': { type: 'file', content: '# User profile\nexport PATH=$PATH:/usr/local/bin\nexport EDITOR=vim\n# export OLD_FLAG=CTF{terminal_welcome_party}\n', hidden: true },
+              'documents': {
+                type: 'dir',
+                children: {
+                  'personal': {
+                    type: 'dir',
+                    children: {
+                      'diary.txt': { type: 'file', content: 'Day 1: Started learning Linux commands.\nDay 2: Learned about hidden files.\nDay 3: Found something interesting in /var/log\nDay 4: Thought the flag was CTF{dear_diary_i_found_it} but it didn\'t work.\n' },
+                      'todo.txt': { type: 'file', content: '[ ] Learn ls command\n[x] Learn cd command\n[ ] Master grep\n[ ] Find all the flags!\n' }
+                    }
+                  },
+                  'private': {
+                    type: 'dir',
+                    children: {
+                      'flag3.txt': { type: 'file', content: flags.f3 + '\n', flag: 3 },
+                      'secret_notes.txt': { type: 'file', content: 'The flag is in this directory.\nYou navigated here successfully!\n' }
+                    }
+                  },
+                  'work': {
+                    type: 'dir',
+                    children: {
+                      'project.txt': { type: 'file', content: 'Project Alpha\nStatus: In progress\nDeadline: Unknown\nLeftover test data: CTF{project_alpha_complete}\n' }
+                    }
+                  }
+                }
+              },
+              'downloads': {
+                type: 'dir',
+                children: {
+                  'encoded.txt': { type: 'file', content: btoa(flags.f5) + '\n', flag: 5, noCatFlag: true },
+                  'readme_b64.txt': { type: 'file', content: 'The file encoded.txt contains a base64 encoded string.\nDecode it with: base64 -d encoded.txt\nNote: an earlier attempt gave CTF{base64_is_not_encryption} but that was rejected.\n' },
+                  'mystery.bin': { type: 'file', content: '\\x7fELF\\x02\\x01\\x01JUNK_DATA_' + flags.f7 + '_MORE_JUNK\\x00\\x00\\x00\\x00\\x00', flag: 7, binary: true }
+                }
+              },
+              'scripts': {
+                type: 'dir',
+                children: {
+                  'run.sh': { type: 'file', content: '#!/bin/bash\necho "Running script..."\necho "Nothing to see here"\n', perms: '755' },
+                  'hidden_runner.sh': { type: 'file', content: '#!/bin/bash\n# This script does something secret\nFLAG=' + flags.f9 + '\necho $FLAG\n', perms: '700', hidden: true },
+                  'pipe_challenge.txt': { type: 'file', content: 'Hint: use cat pipe_data.txt | grep "CTF" to find the flag\nSomeone already tried CTF{piping_hot_flag} — no luck.\n' },
+                  'pipe_data.txt': { type: 'file', content: Array.from({length:50}, (_,i) => i === 23 ? flags.f9 : 'line_' + (i+1) + ': ' + Math.random().toString(36).substr(2,12)).join('\n') + '\n', flag: 9 }
+                }
+              }
+            }
+          }
+        }
+      },
+      var: {
+        type: 'dir',
+        children: {
+          log: {
+            type: 'dir',
+            children: {
+              'system.log': {
+                type: 'file',
+                content: (function() {
+                  const lines = [];
+                  const msgs = ['Connection established','Authentication attempt','Service started','Disk check passed','Network up','Memory OK','CPU normal','Temp nominal','Backup complete','Update check'];
+                  for (let i = 0; i < 200; i++) {
+                    const d = `2024-0${Math.floor(i/30)+1}-${String(i%28+1).padStart(2,'0')}`;
+                    if (i === 137) {
+                      lines.push(`${d} 14:22:31 kernel: CTF_FLAG ` + flags.f4);
+                    } else {
+                      lines.push(`${d} ${String(Math.floor(Math.random()*24)).padStart(2,'0')}:${String(Math.floor(Math.random()*60)).padStart(2,'0')}:${String(Math.floor(Math.random()*60)).padStart(2,'0')} kernel: ` + msgs[i%msgs.length] + ' [' + (1000+i) + ']');
+                    }
+                  }
+                  return lines.join('\n') + '\n';
+                })(),
+                flag: 4
+              },
+              'auth.log': { type: 'file', content: 'Jan 1 00:00:01 sshd[1234]: Accepted password for ctf-user\nJan 1 00:01:15 sshd[1235]: Failed password for root\nJan 1 00:02:30 sudo[1236]: ctf-user : TTY=pts/0 ; USER=root ; COMMAND=/bin/bash\nJan 1 00:03:44 sshd[1237]: debug token CTF{auth_log_breakthrough}\n' },
+              'debug.log': { type: 'file', content: 'DEBUG: Initializing...\nDEBUG: Loading modules\nDEBUG: All systems nominal\nDEBUG: cached_flag=CTF{debug_mode_enabled}\n' }
+            }
+          },
+          tmp: {
+            type: 'dir',
+            children: {
+              'temp1.txt': { type: 'file', content: 'Temporary file 1\n' },
+              'cache.dat': { type: 'file', content: 'CACHE_V1\x00\x01\x02\x03', binary: true }
+            }
+          }
+        }
+      },
+      etc: {
+        type: 'dir',
+        children: {
+          'passwd': { type: 'file', content: 'root:x:0:0:root:/root:/bin/bash\nctf-user:x:1000:1000:CTF User:/home/ctf-user:/bin/bash\nnobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n' },
+          'hostname': { type: 'file', content: 'linux-challenges\n' },
+          'os-release': { type: 'file', content: 'NAME="CTF Linux"\nVERSION="1.0 (CTF Edition)"\nID=ctflinux\nPRETTY_NAME="CTF Linux 1.0"\nBUILD_ID=CTF{ctf_linux_release_build}\n' },
+          'shadow': { type: 'file', content: 'Permission denied.\n', perms: '640', owner: 'root' },
+          'hosts': { type: 'file', content: '127.0.0.1\tlocalhost\n127.0.1.1\tlinux-challenges\n::1\tlocalhost ip6-localhost\n' }
+        }
+      },
+      usr: {
+        type: 'dir',
+        children: {
+          local: {
+            type: 'dir',
+            children: {
+              bin: {
+                type: 'dir',
+                children: {
+                  'secret_tool': { type: 'file', content: '#!/bin/bash\necho "This tool contains a secret"\n# FLAG: ' + flags.f6, perms: '755', binary: true },
+                }
+              },
+              share: {
+                type: 'dir',
+                children: {
+                  'challenge6': {
+                    type: 'dir',
+                    children: {
+                      'deeply': {
+                        type: 'dir',
+                        children: {
+                          'nested': {
+                            type: 'dir',
+                            children: {
+                              'path': {
+                                type: 'dir',
+                                children: {
+                                  'flag6.txt': { type: 'file', content: flags.f6 + '\n', flag: 6 }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      proc: {
+        type: 'dir',
+        children: {
+          'version': { type: 'file', content: 'Linux version 5.15.0-ctf (ctf@linux) (gcc version 11.3.0) #1 SMP CTF\nbuild_signature: CTF{kernel_version_string}\n' },
+          'cpuinfo': { type: 'file', content: 'processor\t: 0\nvendor_id\t: CTFIntel\nmodel name\t: CTF Processor @ 3.00GHz\ncpu cores\t: 4\n' },
+          'meminfo': { type: 'file', content: 'MemTotal:\t 8192000 kB\nMemFree:\t  4096000 kB\nMemAvailable:\t 6000000 kB\n' },
+          '1': {
+            type: 'dir',
+            children: {
+              'status': { type: 'file', content: 'Name:\tinit\nState:\tS (sleeping)\nPid:\t1\nPPid:\t0\n' },
+              'cmdline': { type: 'file', content: '/sbin/init\n' }
+            }
+          }
+        }
+      },
+      tmp: {
+        type: 'dir',
+        children: {
+          'flag10.txt': { type: 'file', content: flags.f10 + '\n', flag: 10 },
+          'note.txt': { type: 'file', content: 'Sometimes important things end up in /tmp.\nRemember to check this directory!\nP.S. someone scribbled CTF{tmp_files_are_temporary} here.\n' }
+        }
+      },
+      bin: { type: 'dir', children: {} },
+      sbin: { type: 'dir', children: {} },
+      root: { type: 'dir', children: {}, perms: '700', owner: 'root' }
+    }
+  };
+}
+
+// ============================================================
+// TERMINAL ENGINE
+// ============================================================
+
+const ENV = {
+  USER: 'ctf-user',
+  HOME: '/home/ctf-user',
+  PATH: '/usr/local/bin:/usr/bin:/bin',
+  SHELL: '/bin/bash',
+  TERM: 'xterm-256color',
+  FLAG8: _d("XG5qPD0FClFvREMSOhMdfHpIUQ=="),
+  BACKUP_FLAG: 'CTF{environment_is_everything}',
+  OLD_SESSION_FLAG: 'CTF{shell_session_restored}',
+  CTF_LEVEL: '1',
+  HOSTNAME: 'linux-challenges',
+  PWD: '/home/ctf-user',
+  LANG: 'en_US.UTF-8',
+};
+
+let cwd = '/home/ctf-user';
+let history = [];
+let historyIdx = -1;
+let solvedFlags = new Set();
+let currentChallenge = null;
+
+const CHALLENGES = [
+  { id: 1,  name: 'Basic Cat',          title: 'Challenge 1',  flag: 1,  startDir: '/home/ctf-user' },
+  { id: 2,  name: 'Hidden Files',       title: 'Challenge 2',  flag: 2,  startDir: '/home/ctf-user' },
+  { id: 3,  name: 'Dir Navigation',     title: 'Challenge 3',  flag: 3,  startDir: '/home/ctf-user' },
+  { id: 4,  name: 'Grep Log Files',     title: 'Challenge 4',  flag: 4,  startDir: '/home/ctf-user' },
+  { id: 5,  name: 'Base64 Decode',      title: 'Challenge 5',  flag: 5,  startDir: '/home/ctf-user' },
+  { id: 6,  name: 'Find the File',      title: 'Challenge 6',  flag: 6,  startDir: '/home/ctf-user' },
+  { id: 7,  name: 'Extract Strings',    title: 'Challenge 7',  flag: 7,  startDir: '/home/ctf-user' },
+  { id: 8,  name: 'Env Variables',      title: 'Challenge 8',  flag: 8,  startDir: '/home/ctf-user' },
+  { id: 9,  name: 'Pipes & Grep',       title: 'Challenge 9',  flag: 9,  startDir: '/home/ctf-user' },
+  { id: 10, name: 'Check /tmp',         title: 'Challenge 10', flag: 10, startDir: '/home/ctf-user' },
+];
+
+// ============================================================
+// FILESYSTEM HELPERS
+// ============================================================
+
+function resolvePath(path) {
+  if (!path || path === '~') return ENV.HOME;
+  if (path.startsWith('~/')) path = ENV.HOME + path.slice(1);
+  if (!path.startsWith('/')) path = cwd + '/' + path;
+  const parts = path.split('/').filter(Boolean);
+  const resolved = [];
+  for (const p of parts) {
+    if (p === '.') continue;
+    if (p === '..') { resolved.pop(); continue; }
+    resolved.push(p);
+  }
+  return '/' + resolved.join('/');
+}
+
+function getNode(path) {
+  const abs = resolvePath(path);
+  if (abs === '/') return _fs;
+  const parts = abs.split('/').filter(Boolean);
+  let node = _fs;
+  for (const p of parts) {
+    if (!node || node.type !== 'dir' || !node.children) return null;
+    node = node.children[p];
+  }
+  return node || null;
+}
+
+function listDir(path, showHidden) {
+  const node = getNode(path);
+  if (!node) return { error: 'ls: cannot access \'' + path + '\': No such file or directory' };
+  if (node.type !== 'dir') return { error: 'ls: ' + path + ': Not a directory' };
+  const entries = Object.entries(node.children || {})
+    .filter(([name]) => showHidden || !name.startsWith('.'))
+    .map(([name, n]) => ({ name, ...n }));
+  return { entries };
+}
+
+function cwdDisplay() {
+  if (cwd === ENV.HOME) return '~';
+  if (cwd.startsWith(ENV.HOME + '/')) return '~' + cwd.slice(ENV.HOME.length);
+  return cwd;
+}
+
+function promptStr() {
+  return `ctf-user@linux:${cwdDisplay()}$`;
+}
+
+// ============================================================
+// COMMANDS
+// ============================================================
+
+function cmdLs(args) {
+  let showHidden = false, longFormat = false, target = '.';
+  for (const a of args) {
+    if (a.startsWith('-')) {
+      if (a.includes('a')) showHidden = true;
+      if (a.includes('l')) longFormat = true;
+    } else {
+      target = a;
+    }
+  }
+
+  const absTarget = resolvePath(target);
+  const result = listDir(absTarget, showHidden);
+  if (result.error) return [{ text: result.error, cls: 'error' }];
+
+  if (result.entries.length === 0) return [];
+
+  if (longFormat) {
+    const lines = [{ text: 'total ' + result.entries.length, cls: 'output' }];
+    for (const e of result.entries) {
+      const isDir = e.type === 'dir';
+      const perms = e.perms || (isDir ? '755' : '644');
+      const typeChar = isDir ? 'd' : '-';
+      const pStr = typeChar + fmtPerms(perms);
+      const owner = e.owner || 'ctf-user';
+      const size = isDir ? 4096 : (e.content ? e.content.length : 0);
+      const cls = isDir ? 'dir' : (perms.includes('7') ? 'exec' : 'output');
+      lines.push({ text: `${pStr} 1 ${owner} ${owner} ${String(size).padStart(8)} Jan  1 00:00 ${e.name}`, cls });
+    }
+    return lines;
+  } else {
+    const names = result.entries.map(e => {
+      return { text: e.name + (e.type === 'dir' ? '/' : ''), cls: e.type === 'dir' ? 'dir' : (e.perms && e.perms.includes('7') ? 'exec' : 'output') };
+    });
+    // arrange in columns
+    const maxLen = Math.max(...names.map(n => n.text.length)) + 2;
+    const cols = Math.max(1, Math.floor(80 / maxLen));
+    const lines = [];
+    for (let i = 0; i < names.length; i += cols) {
+      const row = names.slice(i, i + cols);
+      const text = row.map(n => n.text.padEnd(maxLen)).join('');
+      lines.push({ text: text.trimEnd(), cls: 'output', multicolor: row });
+    }
+    return lines;
+  }
+}
+
+function fmtPerms(p) {
+  const d = parseInt(p, 8) || 0;
+  const bits = ['r','w','x'];
+  let s = '';
+  for (let i = 6; i >= 0; i -= 3) s += bits.map((b,j) => (d >> (i + 2 - j)) & 1 ? b : '-').join('');
+  return s.length === 9 ? s : 'rwxr-xr-x';
+}
+
+function cmdCd(args) {
+  let target = args[0] || ENV.HOME;
+  if (target === '-') return [{ text: 'cd: OLDPWD not set', cls: 'error' }];
+  const abs = resolvePath(target);
+  const node = getNode(abs);
+  if (!node) return [{ text: `bash: cd: ${target}: No such file or directory`, cls: 'error' }];
+  if (node.type !== 'dir') return [{ text: `bash: cd: ${target}: Not a directory`, cls: 'error' }];
+  if (node.owner === 'root' && node.perms === '700') return [{ text: `bash: cd: ${target}: Permission denied`, cls: 'error' }];
+  cwd = abs;
+  ENV.PWD = abs;
+  return [];
+}
+
+function cmdCat(args) {
+  if (args.length === 0) return [{ text: 'cat: missing operand', cls: 'error' }];
+  const results = [];
+  for (const arg of args) {
+    if (arg.startsWith('-') && arg !== '-') continue; // skip flags for simplicity
+    const abs = resolvePath(arg);
+    const node = getNode(abs);
+    if (!node) { results.push({ text: `cat: ${arg}: No such file or directory`, cls: 'error' }); continue; }
+    if (node.type === 'dir') { results.push({ text: `cat: ${arg}: Is a directory`, cls: 'error' }); continue; }
+    if (node.owner === 'root') { results.push({ text: `cat: ${arg}: Permission denied`, cls: 'error' }); continue; }
+    if (node.binary) {
+      // show strings-like output for binary
+      const content = node.content || '';
+      const printable = content.replace(/[^\x20-\x7E\n]/g, '.');
+      results.push({ text: printable, cls: 'output' });
+    } else {
+      const lines = (node.content || '').split('\n');
+      for (const line of lines) {
+        const isFlagLine = node.flag && (line.includes('CTF{') || line.includes('CTF_FLAG'));
+        results.push({ text: line, cls: isFlagLine ? 'flag' : 'output' });
+      }
+    }
+    if (node.flag && !node.noCatFlag) checkFlag(node.flag);
+  }
+  return results;
+}
+
+function cmdPwd() {
+  return [{ text: cwd, cls: 'output' }];
+}
+
+function cmdEcho(args) {
+  // handle -e, -n flags simply
+  let text = args.filter(a => !a.startsWith('-')).join(' ');
+  // variable expansion
+  text = text.replace(/\$(\w+)/g, (_, v) => ENV[v] !== undefined ? ENV[v] : '');
+  text = text.replace(/\$\{(\w+)\}/g, (_, v) => ENV[v] !== undefined ? ENV[v] : '');
+  return [{ text, cls: 'output' }];
+}
+
+function cmdGrep(args) {
+  if (args.length < 1) return [{ text: 'Usage: grep [OPTION] PATTERN [FILE...]', cls: 'error' }];
+  let pattern = '', files = [], ignoreCase = false, lineNum = false, recursive = false;
+  let nextIsPattern = true;
+  for (const a of args) {
+    if (a.startsWith('-')) {
+      if (a.includes('i')) ignoreCase = true;
+      if (a.includes('n')) lineNum = true;
+      if (a.includes('r') || a.includes('R')) recursive = true;
+    } else if (nextIsPattern) {
+      pattern = a;
+      nextIsPattern = false;
+    } else {
+      files.push(a);
+    }
+  }
+
+  if (files.length === 0) return [{ text: 'grep: no files specified (this emulator doesn\'t support stdin piping directly — use grep PATTERN FILE)', cls: 'error' }];
+
+  const results = [];
+  const tryFile = (filePath, displayPath) => {
+    const abs = resolvePath(filePath);
+    const node = getNode(abs);
+    if (!node) { results.push({ text: `grep: ${filePath}: No such file or directory`, cls: 'error' }); return; }
+    if (node.type === 'dir') {
+      if (recursive) {
+        for (const child of Object.keys(node.children || {})) {
+          tryFile(filePath + '/' + child, displayPath + '/' + child);
+        }
+      } else {
+        results.push({ text: `grep: ${filePath}: Is a directory`, cls: 'error' });
+      }
+      return;
+    }
+    const content = node.content || '';
+    const lines = content.split('\n');
+    const re = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), ignoreCase ? 'i' : '');
+    lines.forEach((line, idx) => {
+      if (re.test(line)) {
+        const prefix = files.length > 1 ? displayPath + ':' : '';
+        const numPrefix = lineNum ? (idx + 1) + ':' : '';
+        const isFlagLine = node.flag && line.includes('CTF');
+        results.push({ text: prefix + numPrefix + line, cls: isFlagLine ? 'flag' : 'output' });
+        if (node.flag) checkFlag(node.flag);
+      }
+    });
+  };
+
+  for (const f of files) {
+    if (f === '2>/dev/null') continue;
+    tryFile(f, f);
+  }
+  return results;
+}
+
+function cmdFind(args) {
+  let startPath = '.';
+  let namePattern = null;
+  let typeFilter = null;
+  const results = [];
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-name' && args[i+1]) { namePattern = args[++i]; }
+    else if (args[i] === '-type' && args[i+1]) { typeFilter = args[++i]; }
+    else if (!args[i].startsWith('-')) { startPath = args[i]; }
+  }
+
+  function walk(path, node) {
+    if (!node) return;
+    const name = path.split('/').pop() || '/';
+    let matches = true;
+    if (namePattern) {
+      const re = new RegExp('^' + namePattern.replace(/\./g,'[.]').replace(/\*/g,'.*').replace(/\?/g,'.') + '$');
+      if (!re.test(name)) matches = false;
+    }
+    if (typeFilter) {
+      if (typeFilter === 'f' && node.type !== 'file') matches = false;
+      if (typeFilter === 'd' && node.type !== 'dir') matches = false;
+    }
+    if (matches && path !== resolvePath(startPath)) {
+      const cls = node.type === 'dir' ? 'dir' : (node.flag ? 'flag' : 'output');
+      results.push({ text: path, cls });
+      if (node.flag) checkFlag(node.flag);
+    }
+    if (node.type === 'dir' && node.children) {
+      for (const [child, childNode] of Object.entries(node.children)) {
+        walk(path.replace(/\/$/, '') + '/' + child, childNode);
+      }
+    }
+  }
+
+  const abs = resolvePath(startPath);
+  const startNode = getNode(abs);
+  if (!startNode) return [{ text: `find: '${startPath}': No such file or directory`, cls: 'error' }];
+  walk(abs, startNode);
+  return results.length ? results : [];
+}
+
+function cmdBase64(args) {
+  let decode = false;
+  let file = null;
+  for (const a of args) {
+    if (a === '-d' || a === '--decode') decode = true;
+    else if (!a.startsWith('-')) file = a;
+  }
+  if (!file) return [{ text: 'Usage: base64 [-d] FILE', cls: 'error' }];
+  const abs = resolvePath(file);
+  const node = getNode(abs);
+  if (!node) return [{ text: `base64: ${file}: No such file or directory`, cls: 'error' }];
+  if (node.type === 'dir') return [{ text: `base64: ${file}: Is a directory`, cls: 'error' }];
+  const content = (node.content || '').trim();
+  try {
+    if (decode) {
+      const decoded = atob(content);
+      if (node.flag) checkFlag(node.flag);
+      return [{ text: decoded, cls: 'flag' }];
+    } else {
+      return [{ text: btoa(content), cls: 'output' }];
+    }
+  } catch(e) {
+    return [{ text: 'base64: invalid input', cls: 'error' }];
+  }
+}
+
+function cmdStrings(args) {
+  const results = [];
+  for (const a of args) {
+    if (a.startsWith('-')) continue;
+    const abs = resolvePath(a);
+    const node = getNode(abs);
+    if (!node) { results.push({ text: `strings: ${a}: No such file or directory`, cls: 'error' }); continue; }
+    if (node.type === 'dir') { results.push({ text: `strings: ${a}: Is a directory`, cls: 'error' }); continue; }
+    const content = node.content || '';
+    // Extract printable sequences of 4+ chars
+    const matches = content.match(/[\x20-\x7E]{4,}/g) || [];
+    for (const m of matches) {
+      const isFlagLine = m.includes('CTF{');
+      results.push({ text: m, cls: isFlagLine ? 'flag' : 'output' });
+    }
+    if (node.flag) checkFlag(node.flag);
+  }
+  return results;
+}
+
+function cmdEnv(args) {
+  const results = [];
+  for (const [k, v] of Object.entries(ENV)) {
+    const isFlagLine = v.includes('CTF{');
+    results.push({ text: `${k}=${v}`, cls: isFlagLine ? 'flag' : 'output' });
+  }
+  checkFlag(8);
+  return results;
+}
+
+function cmdPrintenv(args) {
+  if (args.length === 0) return cmdEnv([]);
+  const results = [];
+  for (const a of args) {
+    if (ENV[a] !== undefined) {
+      const isFlagLine = ENV[a].includes('CTF{');
+      results.push({ text: ENV[a], cls: isFlagLine ? 'flag' : 'output' });
+      if (isFlagLine) checkFlag(8);
+    } else {
+      results.push({ text: '', cls: 'output' });
+    }
+  }
+  return results;
+}
+
+function cmdWhoami() { return [{ text: ENV.USER, cls: 'output' }]; }
+function cmdHostname() { return [{ text: ENV.HOSTNAME, cls: 'output' }]; }
+function cmdUname(args) {
+  if (args.includes('-a')) return [{ text: 'Linux linux-challenges 5.15.0-ctf #1 SMP CTF x86_64 GNU/Linux', cls: 'output' }];
+  return [{ text: 'Linux', cls: 'output' }];
+}
+function cmdId() { return [{ text: 'uid=1000(ctf-user) gid=1000(ctf-user) groups=1000(ctf-user),4(adm),27(sudo)', cls: 'output' }]; }
+function cmdDate() { return [{ text: new Date().toString(), cls: 'output' }]; }
+function cmdHistory() {
+  return history.slice(-50).map((cmd, i) => ({ text: `  ${String(i+1).padStart(3)}  ${cmd}`, cls: 'output' }));
+}
+
+function cmdFile(args) {
+  const results = [];
+  for (const a of args) {
+    if (a.startsWith('-')) continue;
+    const abs = resolvePath(a);
+    const node = getNode(abs);
+    if (!node) { results.push({ text: `${a}: ERROR: No such file or directory`, cls: 'error' }); continue; }
+    if (node.type === 'dir') { results.push({ text: `${a}: directory`, cls: 'output' }); continue; }
+    const type = node.binary ? 'ELF 64-bit LSB executable, x86-64' : 'ASCII text';
+    const extra = node.binary ? ', dynamically linked' : '';
+    results.push({ text: `${a}: ${type}${extra}`, cls: 'output' });
+  }
+  return results;
+}
+
+function cmdHead(args) {
+  let n = 10; let file = null;
+  for (let i = 0; i < args.length; i++) {
+    if ((args[i] === '-n' || args[i] === '-') && args[i+1]) n = parseInt(args[++i]);
+    else if (args[i].match(/^-\d+$/)) n = parseInt(args[i].slice(1));
+    else file = args[i];
+  }
+  if (!file) return [{ text: 'head: missing operand', cls: 'error' }];
+  const abs = resolvePath(file);
+  const node = getNode(abs);
+  if (!node) return [{ text: `head: cannot open '${file}': No such file or directory`, cls: 'error' }];
+  return (node.content || '').split('\n').slice(0, n).map(l => ({ text: l, cls: 'output' }));
+}
+
+function cmdTail(args) {
+  let n = 10; let file = null;
+  for (let i = 0; i < args.length; i++) {
+    if ((args[i] === '-n') && args[i+1]) n = parseInt(args[++i]);
+    else if (args[i].match(/^-\d+$/)) n = parseInt(args[i].slice(1));
+    else file = args[i];
+  }
+  if (!file) return [{ text: 'tail: missing operand', cls: 'error' }];
+  const abs = resolvePath(file);
+  const node = getNode(abs);
+  if (!node) return [{ text: `tail: cannot open '${file}': No such file or directory`, cls: 'error' }];
+  const lines = (node.content || '').split('\n');
+  return lines.slice(-n).map(l => ({ text: l, cls: 'output' }));
+}
+
+function cmdWc(args) {
+  let file = null;
+  for (const a of args) { if (!a.startsWith('-')) file = a; }
+  if (!file) return [{ text: 'wc: missing operand', cls: 'error' }];
+  const abs = resolvePath(file);
+  const node = getNode(abs);
+  if (!node) return [{ text: `wc: ${file}: No such file or directory`, cls: 'error' }];
+  const content = node.content || '';
+  const lines = content.split('\n').length - 1;
+  const words = content.trim().split(/\s+/).filter(Boolean).length;
+  const bytes = content.length;
+  return [{ text: `${String(lines).padStart(7)} ${String(words).padStart(7)} ${String(bytes).padStart(7)} ${file}`, cls: 'output' }];
+}
+
+function cmdSudo(args) {
+  if (args[0] === '-l') return [{ text: 'User ctf-user is not allowed to run sudo on this host.', cls: 'error' }];
+  return [{ text: '[sudo] password for ctf-user: ', cls: 'output' }, { text: 'ctf-user is not in the sudoers file. This incident will be reported.', cls: 'error' }];
+}
+
+function cmdSu(args) {
+  return [{ text: 'Password: ', cls: 'output' }, { text: 'su: Authentication failure', cls: 'error' }];
+}
+
+function cmdChmod(args) { return [{ text: 'chmod: changing permissions of \'' + (args[args.length-1]||'') + '\': Operation not permitted', cls: 'error' }]; }
+function cmdChown(args) { return [{ text: 'chown: changing ownership of \'' + (args[args.length-1]||'') + '\': Operation not permitted', cls: 'error' }]; }
+
+function cmdMan(args) {
+  const manPages = {
+    ls: 'LS(1)  - list directory contents\nUSAGE: ls [OPTION]... [FILE]...\n  -a  do not ignore entries starting with .\n  -l  use a long listing format',
+    cat: 'CAT(1)  - concatenate files and print on the standard output\nUSAGE: cat [OPTION]... [FILE]...',
+    grep: 'GREP(1)  - print lines that match patterns\nUSAGE: grep [OPTION]... PATTERN [FILE]...\n  -i  ignore case\n  -n  print line number\n  -r  recursive',
+    find: 'FIND(1)  - search for files in a directory hierarchy\nUSAGE: find [PATH] [EXPRESSION]\n  -name PATTERN  match file name\n  -type f|d      match file type',
+    base64: 'BASE64(1)  - base64 encode/decode data\nUSAGE: base64 [OPTION]... [FILE]\n  -d  decode data',
+    strings: 'STRINGS(1)  - print the sequences of printable characters in files\nUSAGE: strings [OPTION]... FILE...',
+    env: 'ENV(1)  - run a program in a modified environment / print environment\nUSAGE: env [NAME=VALUE]... [COMMAND]',
+  };
+  const page = args[0];
+  if (!page) return [{ text: 'What manual page do you want?', cls: 'output' }];
+  if (manPages[page]) return manPages[page].split('\n').map(l => ({ text: l, cls: 'output' }));
+  return [{ text: `No manual entry for ${page}`, cls: 'error' }];
+}
+
+function cmdHelp() {
+  return [
+    { text: '╔════════════════════════════════════════════╗', cls: 'info' },
+    { text: '║     Linux CTF Terminal — Available Commands ║', cls: 'info' },
+    { text: '╚════════════════════════════════════════════╝', cls: 'info' },
+    { text: '', cls: 'output' },
+    { text: 'NAVIGATION', cls: 'warning' },
+    { text: '  ls [-a] [-l] [path]    List directory contents', cls: 'output' },
+    { text: '  cd [path]              Change directory', cls: 'output' },
+    { text: '  pwd                    Print working directory', cls: 'output' },
+    { text: '', cls: 'output' },
+    { text: 'FILE OPERATIONS', cls: 'warning' },
+    { text: '  cat [file]             Read file contents', cls: 'output' },
+    { text: '  head [-n N] [file]     Show first N lines', cls: 'output' },
+    { text: '  tail [-n N] [file]     Show last N lines', cls: 'output' },
+    { text: '  file [file]            Determine file type', cls: 'output' },
+    { text: '  wc [file]              Word/line/byte count', cls: 'output' },
+    { text: '', cls: 'output' },
+    { text: 'SEARCH', cls: 'warning' },
+    { text: '  grep [opts] PATTERN FILE   Search for pattern', cls: 'output' },
+    { text: '  find [path] [-name] [-type]  Find files', cls: 'output' },
+    { text: '', cls: 'output' },
+    { text: 'DATA / ENCODING', cls: 'warning' },
+    { text: '  strings [file]         Extract printable strings', cls: 'output' },
+    { text: '  base64 [-d] [file]     Base64 encode/decode', cls: 'output' },
+    { text: '', cls: 'output' },
+    { text: 'SYSTEM', cls: 'warning' },
+    { text: '  echo [text]            Print text / expand vars', cls: 'output' },
+    { text: '  env                    Show environment variables', cls: 'output' },
+    { text: '  printenv [VAR]         Print env variable', cls: 'output' },
+    { text: '  whoami                 Print current user', cls: 'output' },
+    { text: '  id                     Print user identity', cls: 'output' },
+    { text: '  hostname               Print hostname', cls: 'output' },
+    { text: '  uname [-a]             Print system info', cls: 'output' },
+    { text: '  date                   Print current date', cls: 'output' },
+    { text: '  history                Show command history', cls: 'output' },
+    { text: '  man [command]          Show manual page', cls: 'output' },
+    { text: '', cls: 'output' },
+    { text: 'TERMINAL', cls: 'warning' },
+    { text: '  clear                  Clear the terminal', cls: 'output' },
+    { text: '  reset                  Reset challenge', cls: 'output' },
+    { text: '', cls: 'output' },
+    { text: 'TIPS', cls: 'success' },
+    { text: '  • Use Tab for autocomplete', cls: 'output' },
+    { text: '  • Use ↑/↓ to navigate command history', cls: 'output' },
+    { text: '  • Tilde ~ is shorthand for your home dir', cls: 'output' },
+    { text: '  • Flags look like: CTF{...}', cls: 'output' },
+  ];
+}
+
+function cmdReset() {
+  cwd = '/home/ctf-user';
+  if (currentChallenge) cwd = currentChallenge.startDir;
+  return [{ text: 'Terminal reset.', cls: 'success' }];
+}
+
+// ============================================================
+// PIPE SUPPORT (limited: cmd | grep, cmd | base64, etc.)
+// ============================================================
+
+function executeWithPipes(cmdStr) {
+  const parts = cmdStr.split('|').map(s => s.trim()).filter(Boolean);
+  if (parts.length === 1) return executeCommand(parts[0]);
+
+  // Execute first command, then pipe output through grep/base64/wc/strings
+  let lines = executeCommand(parts[0]);
+  for (let i = 1; i < parts.length; i++) {
+    const pipeCmd = parts[i].split(/\s+/);
+    const pipeName = pipeCmd[0];
+    const pipeArgs = pipeCmd.slice(1);
+    const textLines = lines.map(l => l.text);
+
+    if (pipeName === 'grep') {
+      const pattern = pipeArgs.find(a => !a.startsWith('-')) || '';
+      const ignoreCase = pipeArgs.some(a => a.includes('i'));
+      const re = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), ignoreCase ? 'gi' : 'g');
+      lines = textLines.filter(l => re.test(l)).map(l => {
+        const isFlag = l.includes('CTF{') || l.includes('CTF_FLAG');
+        return { text: l, cls: isFlag ? 'flag' : 'output' };
+      });
+      // Check flags in pipe output
+      for (const l of lines) {
+        if (l.text.match(/CTF\{[^}]+\}/)) {
+          const m = l.text.match(/CTF\{[^}]+\}/);
+          checkFlagByValue(m[0]);
+        }
+      }
+    } else if (pipeName === 'base64' && pipeArgs.includes('-d')) {
+      const decoded = textLines.map(l => { try { return atob(l.trim()); } catch(e) { return l; } });
+      lines = decoded.map(l => ({ text: l, cls: l.includes('CTF{') ? 'flag' : 'output' }));
+      for (const l of lines) {
+        if (l.text.includes('CTF{')) {
+          const m = l.text.match(/CTF\{[^}]+\}/);
+          if (m) checkFlagByValue(m[0]);
+        }
+      }
+    } else if (pipeName === 'wc') {
+      const allText = textLines.join('\n');
+      const lc = textLines.length;
+      const wc = allText.trim().split(/\s+/).filter(Boolean).length;
+      const bc = allText.length;
+      lines = [{ text: `${String(lc).padStart(7)} ${String(wc).padStart(7)} ${String(bc).padStart(7)}`, cls: 'output' }];
+    } else if (pipeName === 'head') {
+      const n = parseInt(pipeArgs.find(a => /^\d+$/.test(a)) || '10');
+      lines = lines.slice(0, n);
+    } else if (pipeName === 'tail') {
+      const n = parseInt(pipeArgs.find(a => /^\d+$/.test(a)) || '10');
+      lines = lines.slice(-n);
+    } else if (pipeName === 'sort') {
+      lines = [...lines].sort((a, b) => a.text.localeCompare(b.text));
+    } else if (pipeName === 'uniq') {
+      const seen = new Set();
+      lines = lines.filter(l => { if (seen.has(l.text)) return false; seen.add(l.text); return true; });
+    } else if (pipeName === 'strings') {
+      const allText = textLines.join('\n');
+      const matches = allText.match(/[\x20-\x7E]{4,}/g) || [];
+      lines = matches.map(m => ({ text: m, cls: m.includes('CTF{') ? 'flag' : 'output' }));
+    } else {
+      lines.push({ text: `bash: ${pipeName}: command not found`, cls: 'error' });
+    }
+  }
+  return lines;
+}
+
+function checkFlagByValue(flagVal) {
+  for (const ch of CHALLENGES) {
+    const expected = _d(["XG5qPC8OEG12SFQSJgksfHdfczM9GRFnd0RdMA==","XG5qPDwOGXxGVVQiIgoWdQ==","XG5qPDwKCms+Vm4jPRIsYHpISTo=","XG5qPD8ZGX5GSFA+JgMBVy4JH3Al","XG5qPDoKD2svEW4pNwUcbHpIczcqBAE=","XG5qPD4CEmpGRl4gPwcdbEBfVDc9GQhz","XG5qPCsfDmd3QkISNQksam1IXjUl","XG5qPD0FClFvREMSOhMdfHpIUQ==","XG5qPCgCDGtGRF8pDRQWbHZISSQsFg==","XG5qPCgODmNwVkIkPQgsbHpURSI8NBJhbVg="][ch.id - 1]);
+    if (flagVal === expected) { checkFlag(ch.id); return; }
+  }
+}
+
+function executeCommand(cmdStr) {
+  // Handle 2>/dev/null redirect (just ignore it)
+  cmdStr = cmdStr.replace(/\s*2>\/dev\/null\s*/, ' ').trim();
+
+  const tokens = parseArgs(cmdStr);
+  if (!tokens.length) return [];
+  const cmd = tokens[0].toLowerCase();
+  const args = tokens.slice(1);
+
+  switch(cmd) {
+    case 'ls': return cmdLs(args);
+    case 'cd': return cmdCd(args);
+    case 'cat': return cmdCat(args);
+    case 'pwd': return cmdPwd();
+    case 'echo': return cmdEcho(args);
+    case 'grep': return cmdGrep(args);
+    case 'find': return cmdFind(args);
+    case 'base64': return cmdBase64(args);
+    case 'strings': return cmdStrings(args);
+    case 'env': return cmdEnv(args);
+    case 'printenv': return cmdPrintenv(args);
+    case 'whoami': return cmdWhoami();
+    case 'id': return cmdId();
+    case 'hostname': return cmdHostname();
+    case 'uname': return cmdUname(args);
+    case 'date': return cmdDate();
+    case 'history': return cmdHistory();
+    case 'file': return cmdFile(args);
+    case 'head': return cmdHead(args);
+    case 'tail': return cmdTail(args);
+    case 'wc': return cmdWc(args);
+    case 'sudo': return cmdSudo(args);
+    case 'su': return cmdSu(args);
+    case 'chmod': return cmdChmod(args);
+    case 'chown': return cmdChown(args);
+    case 'man': return cmdMan(args);
+    case 'help': return cmdHelp();
+    case 'clear': clearTerminal(); return [];
+    case 'reset': return cmdReset();
+    case 'exit': return [{ text: 'Type "reset" to reset, or select a challenge above.', cls: 'warning' }];
+    case 'bash': case 'sh': return [{ text: 'Already in a shell session.', cls: 'output' }];
+    case 'python': case 'python3': return [{ text: 'Python is not available in this environment.', cls: 'error' }];
+    case 'vim': case 'nano': case 'emacs': return [{ text: `${cmd}: terminal editors not supported in this environment.`, cls: 'error' }];
+    case 'score': return showScore();
+    case 'flags': return showSolvedFlags();
+    default: return [{ text: `bash: ${cmd}: command not found`, cls: 'error' }];
+  }
+}
+
+function parseArgs(cmd) {
+  const tokens = [];
+  let current = '';
+  let inSingle = false, inDouble = false;
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i];
+    if (c === "'" && !inDouble) { inSingle = !inSingle; }
+    else if (c === '"' && !inSingle) { inDouble = !inDouble; }
+    else if (c === ' ' && !inSingle && !inDouble) {
+      if (current) { tokens.push(current); current = ''; }
+    } else {
+      current += c;
+    }
+  }
+  if (current) tokens.push(current);
+  return tokens;
+}
+
+function showScore() {
+  return [
+    { text: `Solved: ${solvedFlags.size} / ${CHALLENGES.length} challenges`, cls: 'output' },
+  ];
+}
+
+function showSolvedFlags() {
+  if (solvedFlags.size === 0) return [{ text: 'No flags found yet. Keep trying!', cls: 'warning' }];
+  const lines = [{ text: 'Flags captured:', cls: 'success' }];
+  for (const fid of [...solvedFlags].sort((a,b)=>a-b)) {
+    const ch = CHALLENGES.find(c => c.id === fid);
+    lines.push({ text: `  ✓ Challenge ${fid}: ${ch ? ch.title : 'Unknown'}`, cls: 'success' });
+  }
+  return lines;
+}
+
+// ============================================================
+// FLAG DETECTION
+// ============================================================
+
+function checkFlag(flagId) {
+  if (solvedFlags.has(flagId)) return;
+  solvedFlags.add(flagId);
+  updateChallengeBtns();
+
+  // Mark the active challenge solved if it matches
+  if (currentChallenge && currentChallenge.flag === flagId) {
+    setTimeout(() => {
+      appendLines([
+        { text: '', cls: 'output' },
+        { text: '🏁 ═══════════════════════════════════════════', cls: 'success' },
+        { text: `   CHALLENGE ${flagId} COMPLETE!`, cls: 'success' },
+        { text: '   ═══════════════════════════════════════════', cls: 'success' },
+        { text: '', cls: 'output' },
+      ]);
+    }, 100);
+  }
+}
+
+// ============================================================
+// UI
+// ============================================================
+
+const terminal = document.getElementById('terminal');
+const input = document.getElementById('cmd-input');
+const promptEl = document.getElementById('prompt-prefix');
+
+function clearTerminal() {
+  terminal.innerHTML = '';
+}
+
+function appendLines(lines) {
+  for (const line of lines) {
+    const div = document.createElement('div');
+    div.className = 'line ' + (line.cls || 'output');
+    div.textContent = line.text;
+    terminal.appendChild(div);
+  }
+  terminal.scrollTop = terminal.scrollHeight;
+}
+
+function appendPromptLine(cmd) {
+  const div = document.createElement('div');
+  div.className = 'line prompt-line';
+  div.innerHTML = `<span class="prompt-span">${escHtml(promptStr())}</span> <span>${escHtml(cmd)}</span>`;
+  terminal.appendChild(div);
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function updatePrompt() {
+  promptEl.textContent = promptStr() + ' ';
+}
+
+function updateChallengeBtns() {
+  document.querySelectorAll('.challenge-btn').forEach(btn => {
+    const id = parseInt(btn.dataset.id);
+    btn.classList.remove('active', 'solved');
+    if (solvedFlags.has(id)) btn.classList.add('solved');
+    if (currentChallenge && currentChallenge.id === id) btn.classList.add('active');
+  });
+}
+
+function loadChallenge(ch) {
+  currentChallenge = ch;
+  cwd = ch.startDir;
+  ENV.PWD = cwd;
+  clearTerminal();
+  updatePrompt();
+  updateChallengeBtns();
+
+  const panel = document.getElementById('info-panel');
+  panel.innerHTML = `<div class="challenge-title">${escHtml(ch.title)}</div>`;
+
+  appendLines([
+    { text: `╔${'═'.repeat(50)}╗`, cls: 'info' },
+    { text: `║  ${ch.title.padEnd(48)} ║`, cls: 'info' },
+    { text: `╚${'═'.repeat(50)}╝`, cls: 'info' },
+    { text: '', cls: 'output' },
+    { text: 'Type "help" for available commands.', cls: 'info' },
+    { text: '', cls: 'output' },
+  ]);
+}
+
+// Tab completion
+function tabComplete(partial) {
+  const tokens = partial.split(/\s+/);
+  if (tokens.length <= 1) {
+    // Complete command name
+    const cmds = ['ls','cd','cat','pwd','echo','grep','find','base64','strings','env','printenv','whoami','id','hostname','uname','date','history','file','head','tail','wc','sudo','man','help','clear','reset','score','flags'];
+    const matches = cmds.filter(c => c.startsWith(tokens[0]));
+    if (matches.length === 1) return matches[0] + ' ';
+    if (matches.length > 1) { appendLines([{ text: matches.join('  '), cls: 'output' }]); return partial; }
+    return partial;
+  }
+  // Complete file/dir
+  const lastToken = tokens[tokens.length - 1];
+  const slashIdx = lastToken.lastIndexOf('/');
+  const dirPart = slashIdx >= 0 ? lastToken.slice(0, slashIdx + 1) : '';
+  const filePart = lastToken.slice(slashIdx + 1);
+  const targetDir = dirPart ? resolvePath(dirPart) : cwd;
+  const node = getNode(targetDir);
+  if (!node || node.type !== 'dir') return partial;
+  const matches = Object.keys(node.children || {}).filter(n => n.startsWith(filePart) && (filePart.startsWith('.') || !n.startsWith('.')));
+  if (matches.length === 1) {
+    const completed = dirPart + matches[0];
+    const childNode = node.children[matches[0]];
+    return tokens.slice(0, -1).join(' ') + ' ' + completed + (childNode && childNode.type === 'dir' ? '/' : ' ');
+  }
+  if (matches.length > 1) {
+    appendLines([{ text: matches.join('  '), cls: 'output' }]);
+  }
+  return partial;
+}
+
+// Setup challenge buttons
+const bar = document.getElementById('challenges-bar');
+for (const ch of CHALLENGES) {
+  const btn = document.createElement('button');
+  btn.className = 'challenge-btn';
+  btn.textContent = ch.name;
+  btn.dataset.id = ch.id;
+  btn.addEventListener('click', () => loadChallenge(ch));
+  bar.appendChild(btn);
+}
+
+// Input handling
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const cmd = input.value.trim();
+    input.value = '';
+    if (cmd) { history.push(cmd); historyIdx = history.length; }
+    appendPromptLine(cmd);
+    if (cmd) {
+      const output = executeWithPipes(cmd);
+      appendLines(output);
+    }
+    updatePrompt();
+    terminal.scrollTop = terminal.scrollHeight;
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (historyIdx > 0) { historyIdx--; input.value = history[historyIdx]; }
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (historyIdx < history.length - 1) { historyIdx++; input.value = history[historyIdx]; }
+    else { historyIdx = history.length; input.value = ''; }
+  } else if (e.key === 'Tab') {
+    e.preventDefault();
+    input.value = tabComplete(input.value);
+  } else if (e.key === 'l' && e.ctrlKey) {
+    e.preventDefault();
+    clearTerminal();
+  } else if (e.key === 'c' && e.ctrlKey) {
+    e.preventDefault();
+    appendPromptLine(input.value + '^C');
+    input.value = '';
+    updatePrompt();
+  }
+});
+
+// Keep focus on input
+document.addEventListener('click', () => input.focus());
+input.focus();
+
+// Boot message
+appendLines([
+  { text: '  ██╗     ██╗███╗   ██╗██╗   ██╗██╗  ██╗    ██████╗████████╗███████╗', cls: 'success' },
+  { text: '  ██║     ██║████╗  ██║██║   ██║╚██╗██╔╝   ██╔════╝╚══██╔══╝██╔════╝', cls: 'success' },
+  { text: '  ██║     ██║██╔██╗ ██║██║   ██║ ╚███╔╝    ██║        ██║   █████╗  ', cls: 'success' },
+  { text: '  ██║     ██║██║╚██╗██║██║   ██║ ██╔██╗    ██║        ██║   ██╔══╝  ', cls: 'success' },
+  { text: '  ███████╗██║██║ ╚████║╚██████╔╝██╔╝ ██╗   ╚██████╗   ██║   ██║     ', cls: 'success' },
+  { text: '  ╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝    ╚═════╝   ╚═╝   ╚═╝     ', cls: 'success' },
+  { text: '', cls: 'output' },
+  { text: '  Linux Command Line CTF Challenges', cls: 'info' },
+  { text: '  Learn Linux by finding the flags!', cls: 'info' },
+  { text: '', cls: 'output' },
+  { text: '  10 challenges • 10 points total • Type "help" for commands', cls: 'output' },
+  { text: '  Select a challenge from the buttons above to begin.', cls: 'output' },
+  { text: '', cls: 'output' },
+]);
+
+})(); // end IIFE
+</script>
+</body>
+</html>
